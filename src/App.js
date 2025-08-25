@@ -1,24 +1,33 @@
-import logo from './logo.svg';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
+import Map from './components/Map';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <div className="App" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <Routes>
+          <Route path="/" element={
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <h1 className="text-3xl font-bold mb-4">Disaster Management System</h1>
+                <a 
+                  href="/map" 
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold text-lg transition-colors"
+                >
+                  Open Map
+                </a>
+              </div>
+            </div>
+          } />
+          <Route path="/map" element={
+            <div style={{ height: '100vh', width: '100%' }}>
+              <Map />
+            </div>
+          } />
+        </Routes>
+      </div>
+    </Router>
   );
 }
 
