@@ -1,40 +1,111 @@
-// Map.jsx
-import React, { useEffect, useRef } from "react";
+// src/components/Map.jsx
+import React, { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import MapboxGeocoder from "@mapbox/mapbox-gl-geocoder";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
+import {
+  FiLayers,
+  FiSettings,
+  FiAlertCircle,
+  FiMapPin,
+  FiHome,
+  FiPlus,
+  FiMinus,
+  FiCompass,
+  FiFilter,
+  FiMenu,
+  FiX
+} from "react-icons/fi";
 
-// ⚠️ Replace with your Mapbox Access Token
-mapboxgl.accessToken = "pk.eyJ1IjoiYWlzaGNoYW1hcnRoaSIsImEiOiJjbHB1Yjk2djcwajBlMmluenJvdGlucG54In0.1nBG1ilIoMJlD1xJ4mzIoA";
+// ⚠️ Replace with your own token
+mapboxgl.accessToken =
+  "pk.eyJ1IjoiYWlzaGNoYW1hcnRoaSIsImEiOiJjbHB1Yjk2djcwajBlMmluenJvdGlucG54In0.1nBG1ilIoMJlD1xJ4mzIoA";
 
 const Map = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
+  const geocoderRef = useRef(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeLayer, setActiveLayer] = useState("streets");
+  const [layers, setLayers] = useState({
+    hospitals: { visible: true, name: "Hospitals" },
+    police: { visible: true, name: "Police Stations" },
+    shelters: { visible: true, name: "Shelters" },
+    traffic: { visible: false, name: "Traffic" },
+    satellite: { visible: false, name: "Satellite" }
+  });
+
+  // Map styles
+  const mapStyles = {
+    streets: "mapbox://styles/mapbox/streets-v11",
+    satellite: "mapbox://styles/mapbox/satellite-streets-v11",
+    dark: "mapbox://styles/mapbox/dark-v10",
+    light: "mapbox://styles/mapbox/light-v10"
+  };
 
   useEffect(() => {
-    if (map.current) return; // prevent re-initialization
+    if (map.current) return;
 
-    // Init Map
+    // Initialize map
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v11",
-      center: [77.209, 28.6139], // New Delhi
-      zoom: 10,
+      style: mapStyles[activeLayer],
+      center: [0, 20], // 🌍 Start centered globally
+      zoom: 2,
+      attributionControl: false
     });
 
-    // Navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
-
-    // Search (Geocoder)
-    const geocoder = new MapboxGeocoder({
-      accessToken: mapboxgl.accessToken,
-      mapboxgl: mapboxgl,
-      marker: false,
+    // Navigation controls (zoom + compass)
+    const nav = new mapboxgl.NavigationControl({
+      showCompass: false,
+      showZoom: false
     });
-    map.current.addControl(geocoder, "top-left");
+    map.current.addControl(nav, "top-right");
+
+    // Scale & Fullscreen
+    map.current.addControl(new mapboxgl.ScaleControl());
+    map.current.addControl(new mapboxgl.FullscreenControl(), "top-right");
+
+    // User Geolocation
+    const geolocate = new mapboxgl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true
+    });
+    map.current.addControl(geolocate, "top-right");
+
+    // ✅ Mount Geocoder (Global Search)
+    const mountGeocoder = () => {
+      if (geocoderRef.current && typeof geocoderRef.current.onRemove === "function") {
+        try {
+          geocoderRef.current.onRemove(map.current);
+        } catch (_) {}
+      }
+
+      geocoderRef.current = new MapboxGeocoder({
+        accessToken: mapboxgl.accessToken,
+        mapboxgl: mapboxgl,
+        marker: false,
+        placeholder: "Search location...",
+        flyTo: { zoom: 10 },
+        limit: 5
+        // 🚫 Do not set localGeocoderOnly → ensures WORLDWIDE search
+      });
+
+      const searchContainer = document.getElementById("geocoder");
+      if (searchContainer) {
+        while (searchContainer.firstChild) {
+          searchContainer.removeChild(searchContainer.firstChild);
+        }
+        const geocoderEl = geocoderRef.current.onAdd(map.current);
+        searchContainer.appendChild(geocoderEl);
+      }
+    };
+
+    mountGeocoder();
+    map.current.on("style.load", mountGeocoder);
 
     // Draw Tool (Polygon, Line, Point)
     const draw = new MapboxDraw({
@@ -42,31 +113,235 @@ const Map = () => {
       controls: {
         polygon: true,
         trash: true,
-        point: true,
         line_string: true,
-      },
+        point: true
+      }
     });
     map.current.addControl(draw, "top-right");
 
-    // Example Marker
-    const marker = new mapboxgl.Marker({ color: "red" })
-      .setLngLat([77.209, 28.6139])
-      .setPopup(
-        new mapboxgl.Popup({ offset: 25 }).setHTML(
-          `<h1 class="font-bold">New Delhi</h1><p>Marker Example</p>`
-        )
-      )
-      .addTo(map.current);
+    // Add hospital layer
+    map.current.on("load", () => {
+      map.current.addSource("hospitals", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: { name: "AIIMS Hospital" },
+              geometry: { type: "Point", coordinates: [77.2107, 28.5672] }
+            },
+            {
+              type: "Feature",
+              properties: { name: "Safdarjung Hospital" },
+              geometry: { type: "Point", coordinates: [77.1909, 28.5646] }
+            }
+          ]
+        }
+      });
 
-    // On Draw Create Event
-    map.current.on("draw.create", (e) => {
-      console.log("Polygon/Shape created: ", e.features);
+      map.current.addLayer({
+        id: "hospitals",
+        type: "circle",
+        source: "hospitals",
+        paint: {
+          "circle-radius": 8,
+          "circle-color": "#ff0000",
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff"
+        }
+      });
+
+      map.current.on("click", "hospitals", (e) => {
+        const coordinates = e.features[0].geometry.coordinates.slice();
+        const name = e.features[0].properties.name;
+
+        new mapboxgl.Popup()
+          .setLngLat(coordinates)
+          .setHTML(
+            `<h3 class="font-bold">${name}</h3><p>Hospital Location</p>`
+          )
+          .addTo(map.current);
+      });
+
+      map.current.on("mouseenter", "hospitals", () => {
+        map.current.getCanvas().style.cursor = "pointer";
+      });
+      map.current.on("mouseleave", "hospitals", () => {
+        map.current.getCanvas().style.cursor = "";
+      });
     });
+
+    return () => {
+      const sc = document.getElementById("geocoder");
+      if (sc) while (sc.firstChild) sc.removeChild(sc.firstChild);
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
   }, []);
 
+  // Update map style when activeLayer changes
+  useEffect(() => {
+    if (map.current && activeLayer) {
+      map.current.setStyle(mapStyles[activeLayer]);
+    }
+  }, [activeLayer]);
+
+  const toggleLayer = (layerId) => {
+    if (!map.current) return;
+
+    const newLayers = { ...layers };
+    newLayers[layerId].visible = !newLayers[layerId].visible;
+    setLayers(newLayers);
+
+    if (map.current.getLayer(layerId)) {
+      map.current.setLayoutProperty(
+        layerId,
+        "visibility",
+        newLayers[layerId].visible ? "visible" : "none"
+      );
+    }
+  };
+
+  const zoomIn = () => map.current.zoomIn();
+  const zoomOut = () => map.current.zoomOut();
+
   return (
-    <div className="w-full h-[600px] relative">
-      <div ref={mapContainer} className="w-full h-full rounded-xl shadow-lg" />
+    <div className="flex h-screen w-full bg-gray-100 overflow-hidden">
+      {/* Sidebar */}
+      <div
+        className={`bg-white shadow-lg w-64 flex-shrink-0 transition-all duration-300 flex flex-col h-full ${
+          sidebarOpen ? "ml-0" : "-ml-64"
+        }`}
+      >
+        <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10">
+          <div className="flex justify-between items-center">
+            <h1 className="text-lg font-bold text-gray-800 flex items-center">
+              <FiMapPin className="inline-block mr-2 text-red-500" />
+              Disaster Management
+            </h1>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <FiX size={20} />
+            </button>
+          </div>
+          <p className="text-sm text-gray-500">Global Search Enabled</p>
+        </div>
+
+        {/* Search */}
+        <div className="p-4 border-b border-gray-200">
+          <div id="geocoder" className="w-full"></div>
+        </div>
+
+        {/* Layers */}
+        <div className="p-4 overflow-y-auto flex-1">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+            <FiLayers className="mr-2" /> Map Styles
+          </h3>
+          <div className="space-y-2 mb-4">
+            {Object.entries(mapStyles).map(([key, _]) => (
+              <button
+                key={key}
+                onClick={() => setActiveLayer(key)}
+                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center ${
+                  activeLayer === key
+                    ? "bg-blue-100 text-blue-700"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                <span className="capitalize">{key}</span>
+              </button>
+            ))}
+          </div>
+
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+            <FiFilter className="mr-2" /> Data Layers
+          </h3>
+          <div className="space-y-2">
+            {Object.entries(layers).map(([id, layer]) => (
+              <label
+                key={id}
+                className="flex items-center space-x-2 text-sm text-gray-700"
+              >
+                <input
+                  type="checkbox"
+                  className="form-checkbox h-4 w-4 text-blue-600 rounded"
+                  checked={layer.visible}
+                  onChange={() => toggleLayer(id)}
+                />
+                <span>{layer.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Alerts */}
+        <div className="p-4 border-t border-gray-200 bg-red-50 sticky bottom-0">
+          <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center">
+            <FiAlertCircle className="mr-2" /> Emergency Alerts
+          </h3>
+          <p className="text-xs text-red-600">No active alerts.</p>
+        </div>
+      </div>
+
+      {/* Map */}
+      <div className="flex-1 flex flex-col h-screen w-full">
+        <div className="bg-white border-b border-gray-200 p-2 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 rounded-lg hover:bg-gray-100"
+          >
+            <FiMenu className="w-5 h-5 text-gray-600" />
+          </button>
+
+          <div className="flex items-center space-x-2">
+            <button className="p-2 rounded-lg hover:bg-gray-100">
+              <FiSettings className="w-5 h-5 text-gray-600" />
+            </button>
+            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center">
+              <FiHome className="mr-2" /> Home
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 relative w-full">
+          <div
+            ref={mapContainer}
+            className="absolute top-0 bottom-0 left-0 right-0 w-full h-full z-0"
+          />
+
+          {/* Custom Zoom Controls */}
+          <div className="absolute right-4 bottom-20 bg-white rounded-lg shadow-lg overflow-hidden z-10 border border-gray-200">
+            <button
+              onClick={zoomIn}
+              className="p-2 hover:bg-gray-100 block w-10 h-10 flex items-center justify-center text-gray-700"
+              title="Zoom in"
+            >
+              <FiPlus className="w-4 h-4" />
+            </button>
+            <div className="border-t border-gray-200"></div>
+            <button
+              onClick={zoomOut}
+              className="p-2 hover:bg-gray-100 block w-10 h-10 flex items-center justify-center text-gray-700"
+              title="Zoom out"
+            >
+              <FiMinus className="w-4 h-4" />
+            </button>
+            <div className="border-t border-gray-200"></div>
+            <button
+              onClick={() => map.current.resetNorth()}
+              className="p-2 hover:bg-gray-100 block w-10 h-10 flex items-center justify-center text-gray-700"
+              title="Reset North"
+            >
+              <FiCompass className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
