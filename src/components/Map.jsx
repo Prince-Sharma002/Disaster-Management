@@ -1,3 +1,4 @@
+
 // src/components/Map.jsx
 import React, { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
@@ -19,6 +20,11 @@ import {
   FiMenu,
   FiX
 } from "react-icons/fi";
+import { db, storage } from "../firebase"; // Import Firestore and Storage
+import { collection, addDoc, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import area from "@turf/area";
+
 
 // ⚠️ Replace with your own token
 mapboxgl.accessToken =
@@ -30,6 +36,12 @@ const Map = () => {
   const geocoderRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeLayer, setActiveLayer] = useState("streets");
+  const [polygons, setPolygons] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [newPolygon, setNewPolygon] = useState(null);
+  const [polygonName, setPolygonName] = useState("");
+  const [polygonImage, setPolygonImage] = useState(null);
+
   const [layers, setLayers] = useState({
     hospitals: { visible: true, name: "Hospitals" },
     police: { visible: true, name: "Police Stations" },
@@ -45,6 +57,20 @@ const Map = () => {
     dark: "mapbox://styles/mapbox/dark-v10",
     light: "mapbox://styles/mapbox/light-v10"
   };
+
+  useEffect(() => {
+    // Fetch polygons from Firestore
+    const unsubscribe = onSnapshot(collection(db, "polygons"), (snapshot) => {
+      const fetchedPolygons = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setPolygons(fetchedPolygons);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
 
   useEffect(() => {
     if (map.current) return;
@@ -82,7 +108,7 @@ const Map = () => {
       if (geocoderRef.current && typeof geocoderRef.current.onRemove === "function") {
         try {
           geocoderRef.current.onRemove(map.current);
-        } catch (_) {}
+        } catch (_) {}\
       }
 
       geocoderRef.current = new MapboxGeocoder({
@@ -120,8 +146,59 @@ const Map = () => {
     });
     map.current.addControl(draw, "top-right");
 
+    map.current.on("draw.create", (e) => {
+        const newPolygonData = e.features[0];
+        setNewPolygon(newPolygonData);
+        setShowModal(true);
+      });
+
     // Add hospital layer
     map.current.on("load", () => {
+        map.current.addSource("polygons", {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: polygons,
+            },
+          });
+    
+          map.current.addLayer({
+            id: "polygons-layer",
+            type: "fill",
+            source: "polygons",
+            paint: {
+              "fill-color": "#088",
+              "fill-opacity": 0.5,
+            },
+          });
+
+          map.current.on("click", "polygons-layer", (e) => {
+            const feature = e.features[0];
+            const { name, time, area, imageUrl } = feature.properties;
+            const coordinates = e.lngLat;
+      
+            const popupContent = `
+              <h3 class=\\\'font-bold\\\'>${name}</h3>
+              <p>Time: ${new Date(time).toLocaleString()}</p>
+              <p>Area: ${area.toFixed(2)} sq. meters</p>
+              ${imageUrl ? `<img src=\\\'${imageUrl}\\\' alt=\\\'${name}\\\' class=\\\'w-full h-auto mt-2\\\'>` : ""}
+            `;
+      
+            new mapboxgl.Popup()
+              .setLngLat(coordinates)
+              .setHTML(popupContent)
+              .addTo(map.current);
+          });
+      
+          map.current.on("mouseenter", "polygons-layer", () => {
+            map.current.getCanvas().style.cursor = "pointer";
+          });
+      
+          map.current.on("mouseleave", "polygons-layer", () => {
+            map.current.getCanvas().style.cursor = "";
+          });
+
+
       map.current.addSource("hospitals", {
         type: "geojson",
         data: {
@@ -183,12 +260,48 @@ const Map = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (map.current && map.current.getSource("polygons")) {
+      map.current.getSource("polygons").setData({
+        type: "FeatureCollection",
+        features: polygons,
+      });
+    }
+  }, [polygons]);
+
   // Update map style when activeLayer changes
   useEffect(() => {
     if (map.current && activeLayer) {
       map.current.setStyle(mapStyles[activeLayer]);
     }
   }, [activeLayer]);
+
+  const handlePolygonSubmit = async () => {
+    if (!polygonName || !newPolygon) return;
+  
+    const polygonArea = area(newPolygon);
+    let imageUrl = "";
+  
+    if (polygonImage) {
+      const imageRef = ref(storage, `polygon-images/${Date.now()}_${polygonImage.name}`);
+      await uploadBytes(imageRef, polygonImage);
+      imageUrl = await getDownloadURL(imageRef);
+    }
+  
+    await addDoc(collection(db, "polygons"), {
+      name: polygonName,
+      time: new Date().toISOString(),
+      area: polygonArea,
+      geometry: newPolygon.geometry,
+      imageUrl,
+    });
+  
+    setShowModal(false);
+    setPolygonName("");
+    setPolygonImage(null);
+    setNewPolygon(null);
+  };
+  
 
   const toggleLayer = (layerId) => {
     if (!map.current) return;
@@ -211,12 +324,42 @@ const Map = () => {
 
   return (
     <div className="flex h-screen w-full bg-gray-100 overflow-hidden">
+        {showModal && (
+        <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-4 rounded-lg">
+            <h2 className="text-lg font-bold mb-4">New Polygon</h2>
+            <input
+              type="text"
+              placeholder="Polygon Name"
+              value={polygonName}
+              onChange={(e) => setPolygonName(e.target.value)}
+              className="w-full p-2 border rounded mb-4"
+            />
+            <input
+              type="file"
+              onChange={(e) => setPolygonImage(e.target.files[0])}
+              className="w-full p-2 border rounded mb-4"
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowModal(false)}
+                className="mr-2 px-4 py-2 bg-gray-300 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePolygonSubmit}
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Sidebar */}
       <div
-        className={`bg-white shadow-lg w-64 flex-shrink-0 transition-all duration-300 flex flex-col h-full ${
-          sidebarOpen ? "ml-0" : "-ml-64"
-        }`}
-      >
+        className={`bg-white shadow-lg w-64 flex-shrink-0 transition-all duration-300 flex flex-col h-full ${\n          sidebarOpen ? "ml-0" : "-ml-64"\n        }`}\n      >
         <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10">
           <div className="flex justify-between items-center">
             <h1 className="text-lg font-bold text-gray-800 flex items-center">
@@ -248,12 +391,7 @@ const Map = () => {
               <button
                 key={key}
                 onClick={() => setActiveLayer(key)}
-                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center ${
-                  activeLayer === key
-                    ? "bg-blue-100 text-blue-700"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-              >
+                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center ${\n                  activeLayer === key\n                    ? "bg-blue-100 text-blue-700"\n                    : "text-gray-700 hover:bg-gray-100"\n                }`}\n              >
                 <span className="capitalize">{key}</span>
               </button>
             ))}
