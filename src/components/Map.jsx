@@ -57,7 +57,7 @@ const Map = () => {
       zoom: 2,
       attributionControl: false
     });
-
+    
     // Navigation controls (zoom + compass)
     const nav = new mapboxgl.NavigationControl({
       showCompass: false,
