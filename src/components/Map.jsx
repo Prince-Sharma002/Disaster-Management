@@ -108,7 +108,7 @@ const Map = () => {
       if (geocoderRef.current && typeof geocoderRef.current.onRemove === "function") {
         try {
           geocoderRef.current.onRemove(map.current);
-        } catch (_) {}\
+        } catch (_) {}
       }
 
       geocoderRef.current = new MapboxGeocoder({
@@ -178,10 +178,10 @@ const Map = () => {
             const coordinates = e.lngLat;
       
             const popupContent = `
-              <h3 class=\\\'font-bold\\\'>${name}</h3>
+              <h3 class="font-bold">${name}</h3>
               <p>Time: ${new Date(time).toLocaleString()}</p>
               <p>Area: ${area.toFixed(2)} sq. meters</p>
-              ${imageUrl ? `<img src=\\\'${imageUrl}\\\' alt=\\\'${name}\\\' class=\\\'w-full h-auto mt-2\\\'>` : ""}
+              ${imageUrl ? `<img src="${imageUrl}" alt="${name}" class="w-full h-auto mt-2">` : ""}
             `;
       
             new mapboxgl.Popup()
@@ -359,7 +359,10 @@ const Map = () => {
       )}
       {/* Sidebar */}
       <div
-        className={`bg-white shadow-lg w-64 flex-shrink-0 transition-all duration-300 flex flex-col h-full ${\n          sidebarOpen ? "ml-0" : "-ml-64"\n        }`}\n      >
+        className={`bg-white shadow-lg w-64 flex-shrink-0 transition-all duration-300 flex flex-col h-full ${
+          sidebarOpen ? "ml-0" : "-ml-64"
+        }`}
+      >
         <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10">
           <div className="flex justify-between items-center">
             <h1 className="text-lg font-bold text-gray-800 flex items-center">
@@ -391,7 +394,12 @@ const Map = () => {
               <button
                 key={key}
                 onClick={() => setActiveLayer(key)}
-                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center ${\n                  activeLayer === key\n                    ? "bg-blue-100 text-blue-700"\n                    : "text-gray-700 hover:bg-gray-100"\n                }`}\n              >
+                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center ${
+                  activeLayer === key
+                    ? "bg-blue-100 text-blue-700"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
                 <span className="capitalize">{key}</span>
               </button>
             ))}
